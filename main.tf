@@ -108,6 +108,7 @@ resource "aws_ecs_service" "fargate_service" {
   desired_count                     = var.desired_count
   launch_type                       = "FARGATE"
   health_check_grace_period_seconds = var.health_check_grace_period
+  enable_execute_command            = var.enable_execute_command
   network_configuration {
     subnets          = var.private_subnet_ids
     assign_public_ip = var.assign_public_ip
