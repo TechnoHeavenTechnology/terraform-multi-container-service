@@ -88,6 +88,32 @@ resource "aws_iam_role_policy" "task_cloudwatch_access" {
   })
 }
 
+# ECS Exec (aws ecs execute-command) needs the task role — not the execution role — to be able
+# to open the SSM Session Manager channel. Only attached when enable_execute_command is true and
+# only to a role this module created; a caller supplying existing_task_role_arn owns that role
+# and must grant these permissions themselves if they also want exec enabled.
+resource "aws_iam_role_policy" "task_execute_command" {
+  count = var.existing_task_role_arn == null && var.enable_execute_command ? 1 : 0
+  name  = "${var.ecs_service_name}-execute-command"
+  role  = aws_iam_role.new_task[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # Custom policy for task role if provided (fallback when task_role_policy_documents is empty)
 resource "aws_iam_role_policy" "task_custom_policy" {
   count  = var.existing_task_role_arn == null && var.task_role_custom_policy_document != null && length(var.task_role_policy_documents) == 0 ? 1 : 0

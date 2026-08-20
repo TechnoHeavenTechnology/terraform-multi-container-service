@@ -242,6 +242,12 @@ variable "enable_service_discovery" {
   default     = false
 }
 
+variable "enable_execute_command" {
+  description = "Whether to enable ECS Exec (aws ecs execute-command) on the service's tasks, and grant the task role the SSM Session Manager permissions it requires. Defaults to false — intended for dev/test environments only, never prod/pre-prod."
+  type        = bool
+  default     = false
+}
+
 variable "service_discovery_namespace_id" {
   description = "ID of the service discovery namespace"
   type        = string
