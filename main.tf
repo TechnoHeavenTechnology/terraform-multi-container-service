@@ -109,6 +109,18 @@ resource "aws_ecs_service" "fargate_service" {
   launch_type                       = "FARGATE"
   health_check_grace_period_seconds = var.health_check_grace_period
   enable_execute_command            = var.enable_execute_command
+  # Without this, Terraform considers an update to this resource "done" the
+  # instant the UpdateService API call is accepted - not once the actual
+  # deployment rolls out and old tasks finish draining/deregistering. That
+  # race is real: confirmed live (iac-trpc-admin-app-infra-ap dev) where a
+  # change removing service_registries reported "Modifications complete
+  # after 1s" while the old Cloud Map service still had a registered
+  # instance seconds later, causing a dependent aws_service_discovery_service
+  # replace/destroy to fail with ResourceInUse twice in a row (not a fluke -
+  # deterministic, since there's no dependency edge forcing real completion
+  # to happen first). This makes the apply block until ECS reports the
+  # deployment actually stable.
+  wait_for_steady_state = true
   network_configuration {
     subnets          = var.private_subnet_ids
     assign_public_ip = var.assign_public_ip
