@@ -184,6 +184,20 @@ resource "aws_ecs_service" "fargate_service" {
 resource "aws_service_discovery_service" "service_sd" {
   count = var.enable_service_discovery ? 1 : 0
 
+  # Explicit (not reference-inferred) dependency. When enable_service_discovery
+  # flips true->false, the NEW config's aws_ecs_service no longer has a
+  # service_registries block referencing this resource at all - so Terraform's
+  # graph (built from desired config, not prior state) has no edge between
+  # them, and schedules this destroy in parallel with the service update
+  # instead of after it. Confirmed live: even with wait_for_steady_state=true
+  # on the service, this destroy fired immediately alongside the service
+  # update and failed with ResourceInUse (ECS hadn't detached the instance
+  # yet) - because the service update hadn't even started, not because it
+  # hadn't finished. This depends_on is unconditional so the ordering holds
+  # both when disabling discovery (service must detach first) and when
+  # discovery is already stable from a prior apply (no-op, same order is safe).
+  depends_on = [aws_ecs_service.fargate_service]
+
   name = var.ecs_service_name
 
   dns_config {
