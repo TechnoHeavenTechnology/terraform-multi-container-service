@@ -180,23 +180,36 @@ resource "aws_ecs_service" "fargate_service" {
   )
 }
 
+# Ordering fence for the Cloud Map destroy below. depends_on must be a
+# static list - it can't itself be `var.enable_service_discovery ? [] :
+# [...]` (Terraform rejects that as "a static list expression is
+# required"), and a plain unconditional depends_on on aws_ecs_service from
+# service_sd would cycle with the forward reference edge (ecs_service ->
+# service_sd) that exists whenever discovery is enabled. Routing through
+# this intermediate resource breaks the cycle: it only exists (count=1)
+# when discovery is disabled, so its depends_on edge to aws_ecs_service is
+# only ever live in the one state where aws_ecs_service has no reverse
+# reference to service_sd to conflict with.
+resource "terraform_data" "service_discovery_disabled" {
+  count      = var.enable_service_discovery ? 0 : 1
+  depends_on = [aws_ecs_service.fargate_service]
+}
+
 # Service Discovery
 resource "aws_service_discovery_service" "service_sd" {
   count = var.enable_service_discovery ? 1 : 0
 
-  # Explicit (not reference-inferred) dependency, ONLY when discovery is
-  # disabled. When enable_service_discovery flips true->false, the NEW
-  # config's aws_ecs_service no longer has a service_registries block
-  # referencing this resource at all - so Terraform's graph (built from
-  # desired config, not prior state) has no edge between them, and schedules
-  # this destroy in parallel with the service update instead of after it.
-  # Confirmed live: even with wait_for_steady_state=true on the service, this
-  # destroy fired immediately alongside the service update and failed with
-  # ResourceInUse (ECS hadn't detached the instance yet - the update hadn't
-  # even started, not just hadn't finished). Gating this on !enable_service_
-  # discovery avoids a cycle with the forward reference edge (ecs_service ->
-  # this resource) that already exists whenever discovery is enabled.
-  depends_on = var.enable_service_discovery ? [] : [aws_ecs_service.fargate_service]
+  # Forces this destroy (when enable_service_discovery flips true->false) to
+  # wait on aws_ecs_service's update completing - via the fence above,
+  # because the NEW config's aws_ecs_service no longer has a
+  # service_registries block referencing this resource at all, so
+  # Terraform's graph (built from desired config, not prior state) has no
+  # direct edge between them and would otherwise schedule this destroy in
+  # parallel with the service update instead of after it. Confirmed live:
+  # even with wait_for_steady_state=true on the service, this destroy fired
+  # immediately alongside the service update and failed with ResourceInUse
+  # (ECS hadn't detached the instance yet - the update hadn't even started).
+  depends_on = [terraform_data.service_discovery_disabled]
 
   name = var.ecs_service_name
 
