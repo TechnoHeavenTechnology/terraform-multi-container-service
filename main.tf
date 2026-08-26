@@ -185,7 +185,16 @@ resource "aws_service_discovery_service" "service_sd" {
     routing_policy = "MULTIVALUE"
   }
 
-  health_check_custom_config {}
+  # An all-default empty block here (`health_check_custom_config {}`) gets
+  # silently dropped by the provider's own GetOk-based check - Terraform
+  # plans to create it, but the API call never actually includes it,
+  # leaving a service with NO health_check_custom_config at all. Confirmed
+  # live: next plan then wants to replace the "just created" service to
+  # add the very block that was already declared, forever. An explicit
+  # non-zero attribute makes the block register as genuinely set.
+  health_check_custom_config {
+    failure_threshold = 1
+  }
 
   tags = merge(
     var.tags,
